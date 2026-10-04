@@ -292,16 +292,18 @@ function helpText_() {
   return [
     'LỆNH & VÍ DỤ',
     'Ghi chép: <nội dung> <số tiền> [mã loại]',
-    '  VD 1: an sang 50 (tự động vào Nhu cầu)',
-    '  VD 2: luong 5000 thunhap (lưu vào Thu nhập)',
-    'Báo cáo: report [tháng/năm]',
-    '  VD: report 9/2026',
+    '  VD 1: ăn sáng 50 (tự động lưu vào loại mặc định)',
+    '  VD 2: lương 5000 thunhap (lưu vào loại Thu nhập)',
+    'Báo cáo: report [tháng] hoặc [tháng/năm]',
+    '  VD 1: report (báo cáo tháng hiện tại)',
+    '  VD 2: report 9 (báo cáo tháng 9 năm nay)',
+    '  VD 3: report 9/2026',
     'Hoàn tác: undo',
     '  Xóa khoản ghi gần nhất.',
     '',
     'LƯU Ý',
     '- Đơn vị tiền là nghìn đồng (50 = 50k, 1500 = 1.5tr).',
-    '- Nếu không kèm mã loại, hệ thống tự lưu vào Nhu cầu.',
+    '- Bot tự hiểu tiếng Việt có dấu hay không dấu đều được.',
     '- Thêm/sửa Loại trực tiếp trong sheet Types.',
     '',
     'CÁC LOẠI ĐANG CÓ',
@@ -315,7 +317,7 @@ function unknownTypeMsg_(token, types) {
 
 function addExpense_(parts) {
   const n = parts.length;
-  if (n < 2) return 'Sai cú pháp. VD: an sang 10. Gõ "help" để xem hướng dẫn.';
+  if (n < 2) return 'Sai cú pháp. VD: ăn sáng 10. Gõ "help" để xem hướng dẫn.';
 
   const types = loadTypes_();
   const last = parts[n - 1];
@@ -331,10 +333,10 @@ function addExpense_(parts) {
     amount = parseAmount_(last);
     if (amount === null) {
       if (prev !== null) {
-        if (resolveType_(last, types)) return 'Thiếu nội dung. VD: an sang ' + parts[0] + ' ' + last + '\nGõ "help" để xem hướng dẫn.';
+        if (resolveType_(last, types)) return 'Thiếu nội dung. VD: ăn sáng ' + parts[0] + ' ' + last + '\nGõ "help" để xem hướng dẫn.';
         return unknownTypeMsg_(last, types);
       }
-      return 'Số tiền không hợp lệ. Cú pháp: <nội dung> <số tiền> [mã loại]\nVD: cafe 35\nGõ "help" để xem hướng dẫn.';
+      return 'Số tiền không hợp lệ. Cú pháp: <nội dung> <số tiền> [mã loại]\nVD: cà phê 35\nGõ "help" để xem hướng dẫn.';
     }
     noteParts = parts.slice(0, -1);
     t = defaultType_(types);
@@ -454,10 +456,10 @@ function buildGuide_(sh) {
     ['section', 'command', 'description', 'example'],
     ['Ghi chi tiêu', '<nội dung> <số tiền>',
       'Cách nhanh nhất. Chữ cuối cùng là số tiền, mọi thứ đằng trước là nội dung. Tự động lưu vào DEFAULT_TYPE.',
-      'an sang 10'],
+      'ăn sáng 10'],
     ['Ghi chi tiêu', '<nội dung> <số tiền> <mã loại>',
       'Lưu vào loại cụ thể: thêm mã loại ở cuối cùng. Code chỉ lấy mã loại nếu có từ 3 chữ trở lên và chữ kế cuối là số.',
-      'cafe 35 fun'],
+      'cà phê 35 fun'],
     ['Số tiền', 'đơn vị: k',
       'Tiền được tính theo nghìn đồng (bỏ 3 số 0). 20 = 20.000đ. 2000 = 2.000.000đ.',
       'nha 2000'],
