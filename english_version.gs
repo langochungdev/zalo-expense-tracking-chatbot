@@ -3,6 +3,8 @@
 // 2. Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone).
 // 3. Run setupWebhook() function, then message "start" to your bot on Zalo.
 //
+// * To see all commands and available types anytime, message "help" to the bot.
+//
 // ---------------------------------------------------------
 // TROUBLESHOOTING (If setupWebhook fails):
 // The app requires the following Script Properties (Project Settings) to run:

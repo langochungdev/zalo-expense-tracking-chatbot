@@ -3,6 +3,8 @@
 // 2. Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone).
 // 3. Chạy hàm setupWebhook(), sau đó nhắn "start" cho bot trên Zalo.
 //
+// * Để xem danh sách lệnh và các loại đang có bất kỳ lúc nào, hãy nhắn lệnh "help".
+//
 // ---------------------------------------------------------
 // XỬ LÝ SỰ CỐ (Nếu setupWebhook chạy không thành công):
 // Ứng dụng yêu cầu các Script Properties sau (trong Project Settings) để hoạt động:
