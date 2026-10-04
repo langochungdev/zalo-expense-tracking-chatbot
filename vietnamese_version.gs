@@ -180,8 +180,6 @@ function handle_(text) {
       return helpText_();
     case 'report':
       return report_(parts[1]);
-    case 'types':
-      return listTypes_();
     case 'undo':
       return undoExpense_();
   }
@@ -284,6 +282,11 @@ function sumByType_(from, to, types) {
 }
 
 function helpText_() {
+  const types = loadTypes_();
+  const typeLines = Object.keys(types).map(function (c) {
+    return '- ' + c + ': ' + types[c].name;
+  }).join('\n');
+
   return [
     'LỆNH & VÍ DỤ',
     'Ghi chép: <nội dung> <số tiền> [mã loại]',
@@ -291,14 +294,16 @@ function helpText_() {
     '  VD 2: luong 5000 thunhap (lưu vào Thu nhập)',
     'Báo cáo: report [tháng/năm]',
     '  VD: report 9/2026',
-    'Danh sách Loại: types',
     'Hoàn tác: undo',
     '  Xóa khoản ghi gần nhất.',
     '',
     'LƯU Ý',
     '- Đơn vị tiền là nghìn đồng (50 = 50k, 1500 = 1.5tr).',
     '- Nếu không kèm mã loại, hệ thống tự lưu vào Nhu cầu.',
-    '- Thêm/sửa Loại trực tiếp trong sheet Types.'
+    '- Thêm/sửa Loại trực tiếp trong sheet Types.',
+    '',
+    'CÁC LOẠI ĐANG CÓ',
+    typeLines
   ].join('\n');
 }
 
@@ -442,13 +447,6 @@ function report_(arg) {
   return lines.join('\n');
 }
 
-function listTypes_() {
-  const types = loadTypes_();
-  return 'DANH SÁCH LOẠI:\n' + Object.keys(types).map(function (c) {
-    return c + ': ' + types[c].name;
-  }).join('\n');
-}
-
 function buildGuide_(sh) {
   const rows = [
     ['section', 'command', 'description', 'example'],
@@ -467,7 +465,6 @@ function buildGuide_(sh) {
     ['Báo cáo', 'report', 'Báo cáo tháng hiện tại.', 'report'],
     ['Báo cáo', 'report <tháng>', 'Báo cáo tháng cụ thể trong năm nay (1-12).', 'report 9'],
     ['Báo cáo', 'report <tháng>/<năm>', 'Báo cáo tháng và năm cụ thể.', 'report 9/2026'],
-    ['Các Loại', 'types', 'Xem danh sách loại: mã, tên, mục tiêu, nhóm.', 'types'],
     ['Hoàn tác', 'undo', 'Xóa khoản chi tiêu gần nhất trong sheet.', 'undo'],
     ['Hướng dẫn', 'help', 'Hiển thị hướng dẫn trên Zalo.', 'help'],
     ['Sheet Types', 'code, name, monthly_target, group',

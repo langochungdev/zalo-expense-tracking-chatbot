@@ -180,8 +180,6 @@ function handle_(text) {
       return helpText_();
     case 'report':
       return report_(parts[1]);
-    case 'types':
-      return listTypes_();
     case 'undo':
       return undoExpense_();
   }
@@ -284,6 +282,11 @@ function sumByType_(from, to, types) {
 }
 
 function helpText_() {
+  const types = loadTypes_();
+  const typeLines = Object.keys(types).map(function (c) {
+    return '- ' + c + ': ' + types[c].name;
+  }).join('\n');
+
   return [
     'COMMANDS & EXAMPLES',
     'Add record: <note> <amount> [code]',
@@ -291,14 +294,16 @@ function helpText_() {
     '  Ex 2: salary 5000 income (saved to Income)',
     'Report: report [month/year]',
     '  Ex: report 9/2026',
-    'List types: types',
     'Undo: undo',
     '  Deletes the last added record.',
     '',
     'NOTES',
     '- Amount unit is thousands (50 = 50k, 1500 = 1.5m).',
     '- If no code is provided, the record defaults to Needs.',
-    '- Manage types (add/edit) directly in the Types sheet.'
+    '- Manage types (add/edit) directly in the Types sheet.',
+    '',
+    'AVAILABLE TYPES',
+    typeLines
   ].join('\n');
 }
 
@@ -442,13 +447,6 @@ function report_(arg) {
   return lines.join('\n');
 }
 
-function listTypes_() {
-  const types = loadTypes_();
-  return 'TYPES:\n' + Object.keys(types).map(function (c) {
-    return c + ': ' + types[c].name;
-  }).join('\n');
-}
-
 function buildGuide_(sh) {
   const rows = [
     ['section', 'command', 'description', 'example'],
@@ -467,7 +465,6 @@ function buildGuide_(sh) {
     ['Report', 'report', 'Current month report.', 'report'],
     ['Report', 'report <month>', 'Report for a specific month this year (1-12).', 'report 9'],
     ['Report', 'report <month>/<year>', 'Report for a specific month and year.', 'report 9/2026'],
-    ['Types', 'types', 'View all types: code, name, target, group.', 'types'],
     ['Undo', 'undo', 'Deletes the last record in the Expenses sheet.', 'undo'],
     ['Help', 'help', 'Show usage guide in Zalo.', 'help'],
     ['Sheet Types', 'code, name, monthly_target, group',
