@@ -184,6 +184,8 @@ function handle_(text) {
       return report_(parts[1]);
     case 'undo':
       return undoExpense_();
+    case 'export':
+      return exportPdf_(parts[1]);
   }
   return addExpense_(parts);
 }
@@ -286,7 +288,7 @@ function sumByType_(from, to, types) {
 function helpText_() {
   const types = loadTypes_();
   const typeLines = Object.keys(types).map(function (c) {
-    return '- ' + c + ': ' + types[c].name;
+    return '- ' + types[c].name + ': ' + c;
   }).join('\n');
 
   return [
@@ -298,21 +300,26 @@ function helpText_() {
     '  Ex 1: report (current month)',
     '  Ex 2: report 9 (Sept this year)',
     '  Ex 3: report 9/2026',
-    'Undo: undo',
-    '  Deletes the last added record.',
+    'Xuất PDF: export [tháng]',
+    '  Tạo báo cáo biểu đồ, danh sách chi tiêu PDF và lấy link.',
+    '  VD 1: export (xuất tháng hiện tại)',
+    '  VD 2: export 10 (xuất tháng 10 năm nay)',
+    '  VD 3: export 10/2026 (xuất tháng 10 năm 2026)',
+    'Hoàn tác: undo',
+    '  Xóa khoản ghi gần nhất.',
     '',
-    'NOTES',
-    '- Amount unit is thousands (50 = 50k, 1500 = 1.5m).',
-    '- If no code is provided, the record defaults to Needs.',
-    '- Manage types (add/edit) directly in the Types sheet.',
+    'LƯU Ý',
+    '- Đơn vị tiền là nghìn đồng (50 = 50k, 1500 = 1.5tr).',
+    '- Bot tự hiểu tiếng Việt có dấu hay không dấu đều được.',
+    '- Thêm/sửa Loại trực tiếp trong sheet Types.',
     '',
-    'AVAILABLE TYPES',
+    'CÁC LOẠI ĐANG CÓ',
     typeLines
   ].join('\n');
 }
 
 function unknownTypeMsg_(token, types) {
-  return 'Type "' + token + '" not found.\nAvailable codes: ' + Object.keys(types).join(', ') + '\nType "help" for instructions.';
+  return 'Không tìm thấy loại "' + token + '".\nCác mã hiện có: ' + Object.keys(types).join(', ') + '\nGõ "help" để xem hướng dẫn.';
 }
 
 function addExpense_(parts) {
@@ -451,30 +458,277 @@ function report_(arg) {
   return lines.join('\n');
 }
 
+function exportPdf_(arg) {
+  const p = parsePeriod_(arg);
+  if (!p) return 'Thời gian không hợp lệ. VD: export 9/2026\nGõ "help" để xem hướng dẫn.';
+
+  const types = loadTypes_();
+  const sh = sheet_('Expenses');
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return 'Không có dữ liệu chi tiêu để xuất.';
+
+  const data = sh.getRange(2, 1, lastRow - 1, 4).getValues();
+  const currentMonthItems = [];
+  
+  // Xác định khoảng thời gian tháng trước
+  const prevFrom = new Date(p.from.getFullYear(), p.from.getMonth() - 1, 1);
+  const prevTo = new Date(p.from.getFullYear(), p.from.getMonth(), 1);
+  
+  let prevMonthExp = 0;
+  let totalHistoricalExp = 0;
+  const historicalMonths = dict_();
+  let historyCount = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const d = data[i][0];
+    if (!(d instanceof Date)) continue;
+    
+    const note = String(data[i][1]).trim();
+    const typeCode = String(data[i][2]).trim();
+    const amount = num_(data[i][3]);
+    
+    const t = resolveType_(typeCode, types);
+    const group = t ? t.group : 'expense';
+
+    if (group === 'income') {
+       if (d >= p.from && d < p.to) {
+         currentMonthItems.push({date: d, note: note, typeCode: typeCode, amount: amount, isIncome: true});
+       }
+       continue;
+    }
+
+    // Xử lý dữ liệu chi tiêu (expense)
+    if (d >= p.from && d < p.to) {
+      currentMonthItems.push({date: d, note: note, typeCode: typeCode, amount: amount, isIncome: false});
+    }
+    
+    if (d >= prevFrom && d < prevTo) {
+      prevMonthExp += amount;
+    }
+    
+    if (d < p.from) {
+      totalHistoricalExp += amount;
+      const monthKey = d.getFullYear() + '-' + d.getMonth();
+      if (!historicalMonths[monthKey]) {
+        historicalMonths[monthKey] = true;
+        historyCount++;
+      }
+    }
+  }
+
+  if (currentMonthItems.length === 0) return 'No expenses found in ' + p.label;
+
+  const sums = {};
+  let totalExp = 0, totalInc = 0;
+  
+  currentMonthItems.forEach(function(item) {
+    const t = resolveType_(item.typeCode, types);
+    const name = t ? t.name : 'Uncategorized';
+    
+    if (item.isIncome) {
+      totalInc += item.amount;
+    } else {
+      totalExp += item.amount;
+      sums[name] = (sums[name] || 0) + item.amount;
+    }
+  });
+  
+  // Tính trung bình các tháng trước đó
+  const avgExp = historyCount > 0 ? (totalHistoricalExp / historyCount) : 0;
+
+  const expensesOnly = currentMonthItems.filter(function(item) { return !item.isIncome; });
+  expensesOnly.sort(function(a, b) { return b.amount - a.amount; });
+  const topList = expensesOnly.slice(0, 15); // Tăng giới hạn lên 15 để fill hết A4
+
+  const sumArr = Object.keys(sums).map(function(name) { return {name: name, amount: sums[name]}; });
+  sumArr.sort(function(a, b) { return b.amount - a.amount; });
+  
+  const chartColors = ['#1e3a8a', '#991b1b', '#065f46', '#5b21b6', '#9a3412', '#115e59', '#86198f', '#3730a3', '#3f6212', '#7f1d1d'];
+
+  // Tạo biểu đồ cơ cấu (Pie chart) bằng QuickChart
+  let pieChartUrl = '';
+  if (sumArr.length > 0) {
+    const pieData = {
+      type: 'outlabeledPie',
+      data: {
+        labels: sumArr.map(function(s) { 
+          let amt = s.amount;
+          let str = amt >= 1000 ? String(amt / 1000).replace('.', ',') + 'tr' : amt + 'k';
+          return s.name + '\n' + str; 
+        }),
+        datasets: [{
+           data: sumArr.map(function(s) { return s.amount; }),
+           backgroundColor: chartColors.slice(0, sumArr.length)
+        }]
+      },
+      options: {
+        legend: { display: false },
+        plugins: {
+          outlabels: { text: '%l\n%p', color: 'white', stretch: 40, font: { minSize: 15, maxSize: 18 } }
+        }
+      }
+    };
+    pieChartUrl = 'https://quickchart.io/chart?w=600&h=400&c=' + encodeURIComponent(JSON.stringify(pieData));
+  }
+
+  // Tạo biểu đồ so sánh (Bar chart) bằng QuickChart
+  const barData = {
+    type: 'bar',
+    data: {
+      labels: ['Last month', 'Average', p.label],
+      datasets: [{
+        label: 'Expenses (k)',
+        data: [prevMonthExp, Math.round(avgExp), totalExp],
+        backgroundColor: ['#475569', '#b91c1c', '#1d4ed8']
+      }]
+    },
+    options: {
+      legend: { display: false },
+      plugins: { datalabels: { align: 'end', anchor: 'end', font: {size: 16} } },
+      scales: { yAxes: [{ ticks: { beginAtZero: true, fontColor: '#777' } }], xAxes: [{ ticks: { fontColor: '#777' } }] }
+    }
+  };
+  const barChartUrl = 'https://quickchart.io/chart?w=600&h=400&c=' + encodeURIComponent(JSON.stringify(barData));
+
+  // Build HTML Report (Ultra Compact Header & Dark/Deep Colors)
+  let html = '<div style="font-family: \'Helvetica Neue\', Helvetica, Arial, sans-serif; font-size: 13px; max-width: 800px; margin: 0 auto; color: #1e293b; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact;">';
+  
+  html += '<div style="background-color: #0f172a; padding: 20px 30px; color: #ffffff;">';
+  html += '<table style="width: 100%; border-collapse: collapse;"><tr>';
+  html += '<td style="width: 40%; vertical-align: middle;">';
+  html += '<div style="color: #94a3b8; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px;">Financial Report</div>';
+  html += '<h1 style="margin: 0; font-size: 26px; font-weight: 600; text-transform: uppercase; color: #f8fafc;">' + p.label + '</h1>';
+  html += '</td>';
+  
+  // Right side of Header: Summary Cards
+  html += '<td style="width: 60%; vertical-align: middle; text-align: right;">';
+  html += '<table style="width: 100%; border-collapse: collapse;"><tr>';
+  html += '<td style="width: 50%; padding-right: 10px;">';
+  html += '<div style="background: #1d4ed8; border-radius: 8px; padding: 12px 15px; text-align: left;">';
+  html += '<div style="color: rgba(255,255,255,0.8); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Total Income</div>';
+  html += '<div style="color: #ffffff; font-size: 20px; font-weight: 700; margin-top: 4px;">' + money_(totalInc) + '</div>';
+  html += '</div></td>';
+  html += '<td style="width: 50%; padding-left: 10px;">';
+  html += '<div style="background: #b91c1c; border-radius: 8px; padding: 12px 15px; text-align: left;">';
+  html += '<div style="color: rgba(255,255,255,0.8); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Total Expense</div>';
+  html += '<div style="color: #ffffff; font-size: 20px; font-weight: 700; margin-top: 4px;">' + money_(totalExp) + '</div>';
+  html += '</div></td>';
+  html += '</tr></table>';
+  html += '</td></tr></table></div>';
+
+  html += '<div style="padding: 25px 30px;">';
+  
+  // CHARTS ROW
+  html += '<table style="width: 100%; margin-bottom: 25px; border-collapse: collapse;"><tr>';
+  
+  // Left - Chart
+  html += '<td style="width: 50%; vertical-align: top; padding-right: 15px;">';
+  html += '<div style="color: #0f172a; font-size: 15px; font-weight: 700; text-transform: uppercase; border-bottom: 2px solid #1e293b; padding-bottom: 8px; margin-bottom: 20px;">Expense Trends</div>';
+  html += '<div style="text-align: center; margin-bottom: 15px;"><img src="' + barChartUrl + '" style="width: 100%; height: auto; max-height: 280px; object-fit: contain;" /></div>';
+  
+  let cmpText = '';
+  if (prevMonthExp > 0) {
+    const diff = totalExp - prevMonthExp;
+    const pct = Math.round(Math.abs(diff) / prevMonthExp * 100);
+    cmpText = diff > 0 ? ('increased by <b>' + pct + '%</b>') : ('decreased by <b>' + pct + '%</b>');
+  }
+  let avgText = '';
+  if (avgExp > 0) {
+    const diff2 = totalExp - avgExp;
+    const pct2 = Math.round(Math.abs(diff2) / avgExp * 100);
+    avgText = diff2 > 0 ? ('is <b>' + pct2 + '% higher</b> than average' + pct2 + '%</b>') : ('is <b>' + pct2 + '% lower</b> than average' + pct2 + '%</b>');
+  }
+  if (cmpText || avgText) {
+     html += '<div style="font-size: 12px; color: #475569; background: #f8fafc; padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #f1f5f9;">This month's expense ' + (cmpText ? (cmpText + ' compared to last month') : '') + (cmpText && avgText ? ' and ' : '') + avgText + '.</div>';
+  }
+  html += '</td>';
+
+  // Right - Chart
+  html += '<td style="width: 50%; vertical-align: top; padding-left: 15px;">';
+  html += '<div style="color: #0f172a; font-size: 15px; font-weight: 700; text-transform: uppercase; border-bottom: 2px solid #1e293b; padding-bottom: 8px; margin-bottom: 20px;">Expense Breakdown</div>';
+  if (pieChartUrl) {
+    html += '<div style="text-align: center;"><img src="' + pieChartUrl + '" style="width: 100%; height: auto; max-height: 280px; object-fit: contain;" /></div>';
+  }
+  html += '</td>';
+  
+  html += '</tr></table>';
+
+  // FULL WIDTH TOP LIST
+  html += '<div style="color: #0f172a; font-size: 15px; font-weight: 700; text-transform: uppercase; border-bottom: 2px solid #1e293b; padding-bottom: 8px; margin-bottom: 15px;">Top Expenses</div>';
+  html += '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
+  html += '<tr style="background-color: #f8fafc; color: #475569;">';
+  html += '<th style="padding: 10px; text-align: left; font-weight: 600; width: 60px;">Date</th>';
+  html += '<th style="padding: 10px; text-align: left; font-weight: 600;">Note</th>';
+  html += '<th style="padding: 10px; text-align: left; font-weight: 600; width: 120px;">Category</th>';
+  html += '<th style="padding: 10px; text-align: right; font-weight: 600; width: 120px;">Amount</th>';
+  html += '</tr>';
+  
+  topList.forEach(function(item) {
+    const day = ('0' + item.date.getDate()).slice(-2) + '/' + ('0' + (item.date.getMonth() + 1)).slice(-2);
+    const t = resolveType_(item.typeCode, types);
+    const typeName = t ? t.name : 'Other';
+    
+    let colorIndex = sumArr.findIndex(function(s) { return s.name === typeName; });
+    let typeColor = colorIndex >= 0 ? chartColors[colorIndex % chartColors.length] : '#475569';
+
+    html += '<tr>';
+    html += '<td style="padding: 12px 8px; border-bottom: 1px solid #f1f5f9; color: #64748b;">' + day + '</td>';
+    html += '<td style="padding: 12px 8px; border-bottom: 1px solid #f1f5f9; font-weight: 600; color: #1e293b;">' + item.note + '</td>';
+    html += '<td style="padding: 12px 8px; border-bottom: 1px solid #f1f5f9;"><span style="background: ' + typeColor + '; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;">' + typeName + '</span></td>';
+    html += '<td style="padding: 12px 8px; text-align: right; border-bottom: 1px solid #f1f5f9; font-weight: 600; color: #b91c1c;">' + money_(item.amount) + '</td>';
+    html += '</tr>';
+  });
+  html += '</table>';
+
+  html += '<div style="text-align: center; margin-top: 40px; color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; padding-top: 20px;">Report automatically generated by Zalo Expense Chatbot</div>';
+  html += '</div></div>';
+
+  try {
+    const blob = HtmlService.createHtmlOutput(html).getAs('application/pdf');
+    blob.setName('Report_' + p.label.replace(' ', '_') + '.pdf');
+
+    let folder;
+    const folderName = 'chatbot-zalo-report';
+    const folders = DriveApp.getFoldersByName(folderName);
+    if (folders.hasNext()) {
+      folder = folders.next();
+    } else {
+      folder = DriveApp.createFolder(folderName);
+    }
+
+    const file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return '📊 Report ' + p.label + ' generated successfully!\n👉 Click the link to view/download PDF: ' + file.getUrl();
+  } catch (err) {
+    return '❌ Error exporting PDF: ' + err.message + '\n(Most likely due to missing Drive permissions. Please follow the permission guide previously sent).';
+  }
+}
+
 function buildGuide_(sh) {
   const rows = [
     ['section', 'command', 'description', 'example'],
-    ['Log expense', '<note> <amount>',
-      'Quickest way. The last word is the amount, everything before is the note. Auto-saved to DEFAULT_TYPE.',
+    ['Add expense', '<note> <amount>',
+      'Fastest way. The last word is the amount, everything before is the note. Auto-saved to DEFAULT_TYPE.',
       'food 10'],
-    ['Log expense', '<note> <amount> <type>',
-      'Save to a specific type: add type code at the end. Code is only parsed if there are 3+ words and the previous word is a number.',
+    ['Add expense', '<note> <amount> <code>',
+      'Save to specific category: add code at the end.',
       'coffee 35 fun'],
     ['Amount', 'unit: k',
-      'Amounts are in thousands (remove 3 zeros). 20 = 20,000. 2000 = 2,000,000.',
+      'Amounts are in thousands. 20 = 20,000. 2000 = 2,000,000.',
       'rent 2000'],
     ['Amount', 'display',
-      'Bot displays k (thousands), m (millions), or b (billions).',
-      '20 -> 20k | 2000 -> 2m'],
+      'Bot displays k (thousands), tr (millions).',
+      '20 -> 20k | 2000 -> 2tr'],
     ['Report', 'report', 'Current month report.', 'report'],
-    ['Report', 'report <month>', 'Report for a specific month this year (1-12).', 'report 9'],
-    ['Report', 'report <month>/<year>', 'Report for a specific month and year.', 'report 9/2026'],
-    ['Undo', 'undo', 'Deletes the last record in the Expenses sheet.', 'undo'],
-    ['Help', 'help', 'Show usage guide in Zalo.', 'help'],
+    ['Report', 'report <month>', 'Specific month report.', 'report 9'],
+    ['Report', 'report <month>/<year>', 'Specific month and year report.', 'report 9/2026'],
+    ['Export PDF', 'export', 'Export report as PDF. Month can be specified.', 'export\nexport 10\nexport 10/2026'],
+    ['Undo', 'undo', 'Delete the latest expense in the sheet.', 'undo'],
+    ['Help', 'help', 'Show help on Zalo.', 'help'],
     ['Sheet Types', 'code, name, monthly_target, group',
-      'Manage types here. Add rows to create types. code: used in messages. name: display name. group: "Income" or "Expense".',
+      'Manage categories here. Add a row for a new category. code: code used in messages. name: Display name. group: Income or Expense.',
       'fun | Fun | 1000 | Expense'],
-    ['Setup', 'setupWebhook', 'Run in Apps Script after deploying to apply changes.', '']
+    ['Setup', 'setupWebhook', 'Run this after deploying to update webhook.', '']
   ];
   sh.getRange(1, 1, rows.length, 4).setValues(rows);
   sh.setFrozenRows(1);
