@@ -445,10 +445,7 @@ function report_(arg) {
 function listTypes_() {
   const types = loadTypes_();
   return 'TYPES:\n' + Object.keys(types).map(function (c) {
-    const t = types[c];
-    const prefix = t.group === 'income' ? '+' : '-';
-    const tgt = t.target > 0 ? ' (Target: ' + money_(t.target) + ')' : '';
-    return prefix + ' ' + t.name + ' [code: ' + c + ']' + tgt;
+    return c + ': ' + types[c].name;
   }).join('\n');
 }
 
